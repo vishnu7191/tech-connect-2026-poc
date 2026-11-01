@@ -1,0 +1,43 @@
+/* @import must come first, before the Tailwind directives. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-surface-950 text-ink-200 font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'tnum';
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { @apply bg-surface-900; }
+  ::-webkit-scrollbar-thumb { @apply bg-surface-700 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-surface-600; }
+  :focus-visible { @apply outline-none ring-2 ring-accent-500 ring-offset-2 ring-offset-surface-950; }
+}
+
+@layer components {
+  .card { @apply bg-surface-900 rounded-xl shadow-card; }
+  .card-pad { @apply p-5; }
+  .label { @apply text-2xs font-semibold uppercase tracking-wider text-ink-500; }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium
+           transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-primary { @apply btn bg-accent-600 text-white hover:bg-accent-500; }
+  .btn-ghost { @apply btn bg-surface-800 text-ink-200 hover:bg-surface-700; }
+  .btn-danger { @apply btn bg-bad-600 text-white hover:opacity-90; }
+  .input {
+    @apply w-full rounded-lg bg-surface-850 border border-surface-700 px-3 py-2 text-sm text-ink-100
+           placeholder:text-ink-500 focus:border-accent-500 focus:outline-none;
+  }
+  .chip { @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-2xs font-semibold; }
+  .skeleton {
+    @apply bg-surface-800 rounded;
+    background-image: linear-gradient(90deg, transparent, rgba(255,255,255,0.045), transparent);
+    background-size: 800px 100%;
+    @apply animate-shimmer;
+  }
+}

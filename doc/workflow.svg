@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="760" viewBox="0 0 1300 760">
+  <defs>
+    <style>
+      .title { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; font-size: 26px; font-weight: 700; fill: #111827; text-anchor: middle; }
+      .subtitle { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; font-size: 13px; fill: #6b7280; text-anchor: middle; }
+      .box { fill: #ffffff; stroke: #2563eb; stroke-width: 2; rx: 10; ry: 10; }
+      .box-gate { fill: #fef3c7; stroke: #d97706; stroke-width: 2; rx: 10; ry: 10; }
+      .box-io { fill: #eff6ff; stroke: #1d4ed8; stroke-width: 2; rx: 10; ry: 10; }
+      .box-text { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; font-size: 13px; font-weight: 600; fill: #111827; text-anchor: middle; }
+      .box-sub { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; font-size: 11px; fill: #6b7280; text-anchor: middle; }
+      .arrow { fill: none; stroke: #4b5563; stroke-width: 2; marker-end: url(#arrowhead); }
+      .arrow-dashed { fill: none; stroke: #9ca3af; stroke-width: 2; stroke-dasharray: 6 4; marker-end: url(#arrowhead); }
+      .step-label { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; font-size: 11px; fill: #374151; text-anchor: middle; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#4b5563" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="650" y="34" class="title">Lenz — UX Validation Workflow</text>
+  <text x="650" y="54" class="subtitle">Figma prototype → evidence-backed UX findings, before production code</text>
+
+  <!-- Top row: Discovery & Planning -->
+  <!-- 1. Input -->
+  <rect x="40" y="90" width="170" height="64" class="box-io" />
+  <text x="125" y="118" class="box-text">1. Figma URL</text>
+  <text x="125" y="134" class="box-sub">Paste prototype link</text>
+
+  <!-- Arrow 1-2 -->
+  <line x1="210" y1="122" x2="236" y2="122" class="arrow" />
+
+  <!-- 2. Classify -->
+  <rect x="240" y="80" width="170" height="84" class="box" />
+  <text x="325" y="108" class="box-text">2. URL Classification</text>
+  <text x="325" y="124" class="box-sub">proto / design / make / board</text>
+  <text x="325" y="140" class="box-sub">support: full / structural / browser-only</text>
+
+  <!-- Arrow 2-3 -->
+  <line x1="410" y1="122" x2="436" y2="122" class="arrow" />
+
+  <!-- 3. Screen Discovery -->
+  <rect x="440" y="70" width="180" height="104" class="box" />
+  <text x="530" y="98" class="box-text">3. Screen Discovery</text>
+  <text x="530" y="114" class="box-sub">REST API + browser-driven</text>
+  <text x="530" y="130" class="box-sub">screens, components, ambiguous</text>
+  <text x="530" y="146" class="box-sub">modes: rest+browser / rest-only / browser-only</text>
+
+  <!-- Arrow 3-4 -->
+  <line x1="620" y1="122" x2="646" y2="122" class="arrow" />
+
+  <!-- 4. Navigation Graph -->
+  <rect x="650" y="70" width="190" height="104" class="box" />
+  <text x="745" y="98" class="box-text">4. Navigation Graph</text>
+  <text x="745" y="114" class="box-sub">typed edges: screen / overlay / ui-state</text>
+  <text x="745" y="130" class="box-sub">NAVIGATE, CHANGE_TO, SWAP, OVERLAY…</text>
+  <text x="745" y="146" class="box-sub">only screen edges affect reachability</text>
+
+  <!-- Arrow 4-5 -->
+  <line x1="840" y1="122" x2="866" y2="122" class="arrow" />
+
+  <!-- 5. Entry Points -->
+  <rect x="870" y="80" width="170" height="84" class="box" />
+  <text x="955" y="108" class="box-text">5. Entry Points</text>
+  <text x="955" y="124" class="box-sub">confirmed vs inferred</text>
+  <text x="955" y="140" class="box-sub">start node / flow starting point</text>
+
+  <!-- Arrow 5-6 -->
+  <line x1="1040" y1="122" x2="1066" y2="122" class="arrow" />
+
+  <!-- 6. Personas -->
+  <rect x="1070" y="80" width="190" height="104" class="box" />
+  <text x="1165" y="108" class="box-text">6. Persona Generation</text>
+  <text x="1165" y="124" class="box-sub">AI-generated synthetic personas</text>
+  <text x="1165" y="140" class="box-sub">goals, frustrations, accessibility needs</text>
+
+  <!-- Bottom row: Execution & Reporting -->
+  <!-- 7. Test Plans -->
+  <rect x="1070" y="290" width="190" height="104" class="box" />
+  <text x="1165" y="318" class="box-text">7. Test Plan Generation</text>
+  <text x="1165" y="334" class="box-sub">steps, success criteria, friction points</text>
+  <text x="1165" y="350" class="box-sub">grounded in navigation graph</text>
+
+  <!-- Arrow 6-7 (vertical down) -->
+  <line x1="1165" y1="184" x2="1165" y2="276" class="arrow" />
+
+  <!-- 8. Approval Gate -->
+  <rect x="870" y="300" width="170" height="84" class="box-gate" />
+  <text x="955" y="328" class="box-text">8. Test Plan Approval</text>
+  <text x="955" y="344" class="box-sub">human gate: approve / archive</text>
+  <text x="955" y="360" class="box-sub">auto-approve configurable</text>
+
+  <!-- Arrow 7-8 -->
+  <line x1="1040" y1="342" x2="866" y2="342" class="arrow" />
+
+  <!-- 9. Execution -->
+  <rect x="650" y="300" width="190" height="104" class="box" />
+  <text x="745" y="328" class="box-text">9. Autonomous Execution</text>
+  <text x="745" y="344" class="box-sub">Playwright browser drives prototype</text>
+  <text x="745" y="360" class="box-sub">SafeAction vocabulary only</text>
+
+  <!-- Arrow 8-9 -->
+  <line x1="740" y1="352" x2="646" y2="352" class="arrow" />
+
+  <!-- 10. Capture -->
+  <rect x="440" y="300" width="180" height="104" class="box" />
+  <text x="530" y="328" class="box-text">10. Screenshot + Video</text>
+  <text x="530" y="344" class="box-sub">capture per action, full session video</text>
+  <text x="530" y="360" class="box-sub">verification: non-blank, node match, settled</text>
+
+  <!-- Arrow 9-10 -->
+  <line x1="520" y1="352" x2="436" y2="352" class="arrow" />
+
+  <!-- 11. Verdict -->
+  <rect x="240" y="310" width="170" height="84" class="box" />
+  <text x="325" y="338" class="box-text">11. Destination Verdict</text>
+  <text x="325" y="354" class="box-sub">match / mismatch / no-nav / timeout</text>
+  <text x="325" y="370" class="box-sub">declared Figma vs actual node</text>
+
+  <!-- Arrow 10-11 -->
+  <line x1="410" y1="352" x2="236" y2="352" class="arrow" />
+
+  <!-- 12. UX Evaluation -->
+  <rect x="40" y="310" width="170" height="104" class="box" />
+  <text x="125" y="338" class="box-text">12. UX Evaluation</text>
+  <text x="125" y="354" class="box-sub">AI findings per screenshot</text>
+  <text x="125" y="370" class="box-sub">severity, category, recommendation</text>
+  <text x="125" y="386" class="box-sub">observed requires a screenshot</text>
+
+  <!-- Arrow 11-12 -->
+  <line x1="60" y1="352" x2="40" y2="352" class="arrow" />
+
+  <!-- 13. Coverage -->
+  <rect x="40" y="450" width="260" height="104" class="box" />
+  <text x="170" y="478" class="box-text">13. Coverage Report</text>
+  <text x="170" y="494" class="box-sub">seven independent dimensions</text>
+  <text x="170" y="510" class="box-sub">design discovery, reachability, interaction</text>
+  <text x="170" y="526" class="box-sub">discovery, execution, screenshots, tests, video</text>
+  <text x="170" y="542" class="box-sub">never collapsed into one score</text>
+
+  <!-- Arrow 12-13 -->
+  <line x1="125" y1="414" x2="125" y2="436" class="arrow" />
+
+  <!-- 14. Report -->
+  <rect x="330" y="460" width="180" height="84" class="box-io" />
+  <text x="420" y="488" class="box-text">14. UX Report</text>
+  <text x="420" y="504" class="box-sub">findings backed by screenshots</text>
+  <text x="420" y="520" class="box-sub">no overall UX score</text>
+
+  <!-- Arrow 13-14 -->
+  <line x1="300" y1="502" x2="326" y2="502" class="arrow" />
+
+  <!-- Feedback loop: report back to input (iteration) -->
+  <path d="M 420 542 Q 700 542 700 154" fill="none" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
+  <text x="700" y="560" class="step-label">iterate on findings</text>
+
+  <!-- AI model routing annotation -->
+  <rect x="900" y="450" width="360" height="120" class="box" />
+  <text x="1080" y="474" class="box-text">AI Model Routing</text>
+  <text x="1080" y="492" class="box-sub">per-task, never hardcoded by model ID</text>
+  <text x="1080" y="508" class="box-sub">NVIDIA NIM nemotron-3.5-super-vl (default)</text>
+  <text x="1080" y="524" class="box-sub">Groq qwen3.8-27b (fallback)</text>
+  <text x="1080" y="540" class="box-sub">tasks: analysis, personas, plans, testing, eval, report</text>
+  <text x="1080" y="556" class="box-sub">config/ai-providers.json</text>
+</svg>

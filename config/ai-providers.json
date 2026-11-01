@@ -1,0 +1,115 @@
+{
+  "$comment": "Centralized AI provider configuration. API keys are ${ENV_VAR} placeholders resolved from the backend environment at startup. NEVER put a literal key in this file - it is committed to source control. Capability flags and token limits were VERIFIED against the live endpoint; each model note states what was measured and what is merely documented.",
+  "providers": [
+    {
+      "id": "nvidia-nim",
+      "displayName": "NVIDIA NIM",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "apiKey": "${NVIDIA_API_KEY}",
+      "adapter": "openai-compatible",
+      "enabled": true,
+      "timeoutMs": 180000,
+      "maxRetries": 2,
+      "models": [
+        {
+          "id": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+          "name": "Nemotron 3.5 Super VL 120B A12B",
+          "maxInputTokens": 1000000,
+          "maxOutputTokens": 131072,
+          "supportsToolCalling": true,
+          "supportsVision": true,
+          "supportsStructuredOutput": true,
+          "isReasoningModel": true,
+          "enabled": true,
+          "notes": "Verified live: vision, json_schema and json_object all work. Reasoning model - returns reasoning_content and reasoning_tokens separately. LIMITS: maxInputTokens set to the ~1M context documented for this model by NVIDIA and multiple model catalogues. maxOutputTokens 131072 is the largest value verified to work in a REAL end-to-end call (test-plan generation). NVIDIA does NOT validate max_tokens - 200000 and 262144 were also accepted by the endpoint without error - so a larger value is untested and risks silent truncation rather than a clear failure. The brief example of 4096 was far too small: the reasoning trace consumed the whole budget and returned content:null with finish_reason=length."
+        },
+        {
+          "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
+          "name": "Nemotron 3.5 Lightning 30B A3B",
+          "maxInputTokens": 1000000,
+          "maxOutputTokens": 131072,
+          "supportsToolCalling": true,
+          "supportsVision": false,
+          "supportsStructuredOutput": true,
+          "isReasoningModel": false,
+          "enabled": true,
+          "notes": "Text-only. Same limit basis as the VL model in this family: ~1M documented context, 131072 the largest verified output budget. Vision is flagged false until verified; the capability guard blocks image input rather than letting a request fail at the provider."
+        },
+        {
+          "id": "nvidia/llama-3.1-nemotron-70b-instruct",
+          "name": "Llama 3.1 Nemotron 70B Instruct",
+          "maxInputTokens": 128000,
+          "maxOutputTokens": 4096,
+          "supportsToolCalling": false,
+          "supportsVision": false,
+          "supportsStructuredOutput": true,
+          "isReasoningModel": false,
+          "enabled": false,
+          "notes": "DISABLED - verified unavailable: listed by GET /v1/models but calling it returns HTTP 404 \"Not found for account\". Limits are the documented Llama 3.1 values and are UNVERIFIED because the model cannot be invoked on this account."
+        }
+      ]
+    },
+    {
+      "id": "openai-compatible-example",
+      "displayName": "OpenAI-Compatible Endpoint (example)",
+      "baseUrl": "https://api.openai.com/v1",
+      "apiKey": "${OPENAI_API_KEY}",
+      "adapter": "openai-compatible",
+      "enabled": false,
+      "timeoutMs": 120000,
+      "maxRetries": 2,
+      "models": [
+        {
+          "id": "gpt-4o-mini",
+          "name": "GPT-4o mini",
+          "maxInputTokens": 128000,
+          "maxOutputTokens": 16384,
+          "supportsToolCalling": true,
+          "supportsVision": true,
+          "supportsStructuredOutput": true,
+          "isReasoningModel": false,
+          "enabled": true,
+          "notes": "Disabled by default and present only to demonstrate that adding a provider is a configuration change. Limits are the published OpenAI values and are UNVERIFIED here. Its ${OPENAI_API_KEY} placeholder is not required to resolve while the provider is disabled."
+        }
+      ]
+    }
+  ],
+  "taskModels": {
+    "screenAnalysis": {
+      "providerId": "nvidia-nim",
+      "modelId": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "thinking": true
+    },
+    "personaGeneration": {
+      "providerId": "nvidia-nim",
+      "modelId": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "thinking": true
+    },
+    "testPlanGeneration": {
+      "providerId": "nvidia-nim",
+      "modelId": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "thinking": true
+    },
+    "autonomousTesting": {
+      "providerId": "nvidia-nim",
+      "modelId": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "thinking": true
+    },
+    "uxEvaluation": {
+      "providerId": "nvidia-nim",
+      "modelId": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "thinking": true
+    },
+    "reportGeneration": {
+      "providerId": "nvidia-nim",
+      "modelId": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "thinking": true
+    }
+  },
+  "defaults": {
+    "temperature": 0.3,
+    "maxOutputTokens": 32768,
+    "reasoningOutputFloor": 8192,
+    "$comment": "reasoningOutputFloor: minimum output budget for models flagged isReasoningModel, so the reasoning trace cannot starve the answer. It is skipped automatically when thinking is false. thinking: reasoning mode per task - measured on nemotron-3.5-super-vl, disabling it cut output tokens ~6x (59-68 vs 264-412) while still returning schema-valid JSON 3/3. Left true everywhere by default; use the Model Lab to decide per task."
+  }
+}

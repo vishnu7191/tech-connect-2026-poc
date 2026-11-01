@@ -1,0 +1,15 @@
+import { chromium } from 'playwright';
+const key = process.argv[2];
+const out = process.argv[3];
+const url = `https://www.figma.com/proto/${key}/x`;
+const b = await chromium.launch({ headless: true });
+const p = await (await b.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+await p.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+await p.waitForTimeout(12000);
+console.log('final url :', p.url());
+console.log('title     :', await p.title());
+console.log('canvases  :', await p.locator('canvas').count());
+const txt = (await p.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 320);
+console.log('bodyText  :', JSON.stringify(txt));
+await p.screenshot({ path: `${out}/access-check.png` });
+await b.close();

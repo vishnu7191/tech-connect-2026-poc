@@ -1,0 +1,129 @@
+{
+  "nodes": [
+    {
+      "id": "513:8382",
+      "name": "Acc_android",
+      "type": "COMPONENT_SET",
+      "absoluteBoundingBox": {
+        "x": 2157,
+        "y": 9780,
+        "width": 430,
+        "height": 4334
+      }
+    },
+    {
+      "id": "515:1111",
+      "name": "search",
+      "type": "FRAME",
+      "absoluteBoundingBox": {
+        "x": -3722,
+        "y": 6721,
+        "width": 390,
+        "height": 30
+      }
+    },
+    {
+      "id": "1:2",
+      "name": "Home",
+      "type": "FRAME",
+      "absoluteBoundingBox": {
+        "x": -2583,
+        "y": -607,
+        "width": 1440,
+        "height": 5446
+      }
+    },
+    {
+      "id": "238:293",
+      "name": "Login",
+      "type": "COMPONENT",
+      "absoluteBoundingBox": {
+        "x": -4247,
+        "y": -609,
+        "width": 986,
+        "height": 548
+      }
+    },
+    {
+      "id": "21:70",
+      "name": "Heart",
+      "type": "COMPONENT_SET",
+      "absoluteBoundingBox": {
+        "x": 1849,
+        "y": 3189,
+        "width": 73.94112396240234,
+        "height": 235.7645263671875
+      }
+    },
+    {
+      "id": "80:18",
+      "name": "Details",
+      "type": "FRAME",
+      "absoluteBoundingBox": {
+        "x": 2436,
+        "y": -565,
+        "width": 1440,
+        "height": 2449
+      }
+    },
+    {
+      "id": "202:782",
+      "name": "Sizechart",
+      "type": "FRAME",
+      "absoluteBoundingBox": {
+        "x": 3941,
+        "y": -565,
+        "width": 755,
+        "height": 759
+      }
+    },
+    {
+      "id": "425:555",
+      "name": "Menu  login",
+      "type": "FRAME",
+      "absoluteBoundingBox": {
+        "x": -4219,
+        "y": 6871,
+        "width": 195,
+        "height": 380
+      }
+    }
+  ],
+  "canvases": [
+    {
+      "id": "0:1",
+      "name": "Mockup",
+      "prototypeStartNodeID": "1:2",
+      "flowStartingPoints": [
+        {
+          "nodeId": "1:2",
+          "name": "Flow 1"
+        },
+        {
+          "nodeId": "80:18",
+          "name": "Flow 2"
+        },
+        {
+          "nodeId": "238:293",
+          "name": "Flow 3"
+        },
+        {
+          "nodeId": "250:378",
+          "name": "Flow 4"
+        },
+        {
+          "nodeId": "398:652",
+          "name": "Flow 5"
+        }
+      ],
+      "childCount": 102
+    },
+    {
+      "id": "463:985",
+      "name": "Wireframe",
+      "prototypeStartNodeID": null,
+      "flowStartingPoints": [],
+      "childCount": 14
+    }
+  ]
+}

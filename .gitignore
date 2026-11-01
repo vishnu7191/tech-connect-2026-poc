@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+*.local
+data/
+!data/.gitkeep
+coverage/
+.DS_Store
+*.log
+test-results/
+playwright-report/
+.vite/
