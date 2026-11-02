@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { UnreachableReason } from './domain.js';
+import { DeviceProfile } from './devices.js';
 
 /* ------------------------------------------------------------------ *
  * Personas
@@ -193,6 +194,14 @@ export const Execution = z.object({
   navigationCount: z.number(),
   failureReason: z.string().nullable(),
   mode: z.enum(['live', 'mock']),
+  /**
+   * The emulation profile this run actually used.
+   *
+   * Null for executions recorded before device selection existed. The UI shows
+   * those as "device not recorded" rather than assuming desktop - an assumed
+   * viewport would silently corrupt every heatmap built from the run.
+   */
+  device: DeviceProfile.nullable(),
   createdAt: z.string(),
 });
 export type Execution = z.infer<typeof Execution>;
@@ -290,6 +299,17 @@ export const Screenshot = z.object({
   failureReason: UnreachableReason.nullable(),
   /** ADR-0003: figma-render is a design reference, never browser evidence. */
   source: z.enum(['browser', 'figma-render']),
+  /**
+   * Device context, so an overlay can tell whether this image and a set of
+   * recorded coordinates describe the same geometry.
+   *
+   * `width`/`height` above are the CSS VIEWPORT size. The PNG itself is
+   * `width * deviceScaleFactor` pixels across, which is why overlays normalize
+   * to fractions rather than pixels. Null on screenshots captured before device
+   * profiles existed.
+   */
+  deviceId: z.string().nullable().default(null),
+  deviceScaleFactor: z.number().nullable().default(null),
 });
 export type Screenshot = z.infer<typeof Screenshot>;
 
@@ -306,6 +326,19 @@ export const VideoRecord = z.object({
   height: z.number().nullable(),
   status: VideoStatus,
   failureReason: z.string().nullable(),
+  /**
+   * Milliseconds between the execution's monotonic clock origin and the first
+   * recorded video frame.
+   *
+   * Playwright starts recording when the page is created, which is strictly
+   * after the execution record is opened. Without this offset every marker in
+   * the recap player is early by the browser's startup time. Null for
+   * recordings made before this was tracked; the player then falls back to the
+   * raw action offset and labels the timing as approximate.
+   */
+  startOffsetMs: z.number().int().nullable().default(null),
+  /** Emulation profile the recording was made under. */
+  deviceId: z.string().nullable().default(null),
   createdAt: z.string(),
 });
 export type VideoRecord = z.infer<typeof VideoRecord>;

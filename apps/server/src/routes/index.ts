@@ -320,6 +320,31 @@ export async function registerRoutes(app: LenzApp, deps: RouteDeps): Promise<voi
     return job;
   });
 
+  /**
+   * Jobs belonging to a project, newest first.
+   *
+   * A job runs on the server and keeps running when the browser navigates
+   * away - closing the progress stream never cancels it. What was missing was
+   * any way back IN: leaving a page and returning left the work invisible, so
+   * a run still in flight looked like one that had silently stopped. A page can
+   * now ask what is active for the project and re-attach to its stream.
+   */
+  app.get('/api/v1/projects/:id/jobs', async (req) => {
+    const { id } = req.params as { id: string };
+    if (!repos.getProject(id)) throw notFound('Project');
+    const q = req.query as { status?: string; kind?: string };
+    let jobs = repos.listJobs(id);
+    if (q.status) {
+      const wanted = new Set(q.status.split(',').filter(Boolean));
+      jobs = jobs.filter((j) => wanted.has(j.status));
+    }
+    if (q.kind) {
+      const wanted = new Set(q.kind.split(',').filter(Boolean));
+      jobs = jobs.filter((j) => wanted.has(j.kind));
+    }
+    return jobs;
+  });
+
   app.post('/api/v1/jobs/:id/cancel', async (req) => {
     const { id } = req.params as { id: string };
     if (!repos.getJob(id)) throw notFound('Job');

@@ -55,7 +55,7 @@ npm run dev              # server :4000, web :5173
 
 | Command | Purpose |
 |---|---|
-| `npm test` | 122 unit tests — fast, offline, deterministic |
+| `npm test` | 235 unit tests — fast, offline, deterministic |
 | `npm run build` | Typecheck + build all three workspaces |
 | `npm run verify:live` | Real calls to Figma + NVIDIA (needs credentials) |
 
@@ -94,6 +94,15 @@ works** — diagnose through Node, never curl.
 | **Dismiss Figma banners before *every* capture** | They reappear after navigation and end up baked into screenshots. |
 | **Figma file-read quota is long** | A `retry-after` of ~109 h was observed. The 6-hour on-disk document cache is what keeps development working. |
 | **Heredocs mangle backticks/`${}`** in this shell | Use the Write tool for files containing template literals or markdown. |
+| **Playwright's video starts at PAGE creation, not run start** | Every click marker and timeline seek lands early by the browser's start-up time. `videos.start_offset_ms` is the correction. |
+| **`ExecutionAction.offsetMs` is the step's COMPLETION time** | Seeking to it lands 1.9 s (desktop) / 5.5 s (mobile) after the click, on the next screen. Seek to the step's first interaction instead (`seekOffsetForAction`). |
+| **Anything that waits for a result must record the time it BEGAN** | `clickAndVerify` polls for navigation before returning; stamping the event on return put it ~1.2 s late and only 1 of 4 markers on the right screen. Pass `occurredAtMs` (`dispatchedAt` / `startedAt`). Verify with `verify-marker-alignment.mts`. |
+| **`object-fit: cover` + `max-height` CROPS evidence** | It silently cut report screenshots in half and presented the remaining half as the evidence. Constrain both axes with `width/height: auto` instead. |
+| **Playwright's webm duration is inflated ~4.6%** | It looks like drift and invites rescaling marker times. **Do not** — measured, rescaling is 3× worse. Frame timestamps are real-time; only the declared duration is wrong. |
+| **A touch drag that scrolls fires `touchcancel`, not `touchend`** | Its position is stale, so a 400px flick records as ~39px. Track max displacement across `touchmove` and bind both events. |
+| **`dismissBanners()` clicks are real clicks** | They appeared in a live UX heatmap as "Clicked Allow all cookies", attributed to the persona. Interactions are suppressed while banners are dismissed. |
+| **React StrictMode runs effects twice** | A ref-guarded SSE subscription unsubscribes on the first cleanup and never re-subscribes, so a progress panel freezes at 0% while the job completes. Depend on the id + a stable callback; no ref guard. |
+| **Never merge heatmap coordinates across viewports** | A 390-wide and a 1440-wide layout place controls differently; a merged map describes neither while looking plausible. (ADR-0010) |
 
 ## 6. Working agreements
 
@@ -114,6 +123,14 @@ works** — diagnose through Node, never curl.
 **Verified end to end:** Scenario A (prototype with start node), Scenario B (no start node),
 Scenario C (Figma Make), discovery → personas → test plans → approval → execution → video →
 vision analysis, and Model Lab comparison.
+
+**Added 2026-11-02 — device testing, interaction tracking, heatmaps, PDF reports.** Desktop /
+tablet / mobile emulation with custom viewports; every click, tap, swipe and scroll recorded
+with coordinates; click markers over the recap video; click and scroll heatmaps; responsive
+comparison; a printable PDF report. Verified in a real browser (10/10 probe checks) and in the
+running application. Architecture:
+[`architecture/interaction-tracking.md`](architecture/interaction-tracking.md); decisions
+ADR-0009 to ADR-0011.
 
 **Known gaps:**
 - Pause/resume/stop are implemented and wired, but never exercised mid-run.

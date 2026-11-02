@@ -154,3 +154,67 @@ vector into a browser that the system controls. A closed action vocabulary makes
 actions *unrepresentable* rather than merely discouraged, which is a stronger guarantee than
 filtering. Schema validation is also the correctness boundary — malformed output becomes a
 typed, retryable error instead of a corrupt record.
+
+---
+
+## ADR-0009 — Interaction coordinates are recorded or absent, never inferred
+
+**Status:** Accepted · **Date:** 2026-11-02
+
+**Context.** Click and tap positions drive the video markers and every heatmap. Some actions
+genuinely have no position: a keyboard activation, a `navigateToNode` jump by node id, a
+scroll gesture, a step where no control could be mapped at all.
+
+**Decision.** `InteractionEvent` carries `coordinateStatus` (`recorded` | `unavailable`) and a
+`coordinateNote` that is **required** whenever the status is `unavailable`. Heatmap aggregation
+excludes unpositioned events and reports each exclusion with its reason and count. No code path
+writes a default coordinate.
+
+**Reasoning.** A fabricated `0,0` is not a missing value — it is a visible hotspot in the
+top-left corner of a heatmap that nobody can explain and that looks like real behaviour. The
+same applies to scroll depth: `depthFraction` is `null` when the document height was not
+measurable, because a defaulted 0 % reads as "the persona never scrolled", which is a different
+claim entirely. Forcing a written reason at the point of recording is what makes the gap
+explainable later, rather than an unexplained shortfall in a report.
+
+---
+
+## ADR-0010 — Heatmaps group by screen *and* viewport geometry
+
+**Status:** Accepted · **Date:** 2026-11-02
+
+**Context.** The same plan can now run on desktop, tablet and mobile. A responsive layout puts
+the same control in a different place at each width.
+
+**Decision.** The heatmap grouping key is `screenId | deviceId | viewportWidth x viewportHeight`.
+Coordinates recorded at different viewports are never merged, and the UI has no option to
+override this. A background screenshot is used only when its CSS geometry matches the recorded
+viewport exactly; otherwise the group keeps its points, flags the mismatch and explains it.
+
+**Reasoning.** Merging a 390-wide and a 1440-wide run produces a map that describes neither
+layout while looking entirely plausible — the worst class of error this product can make,
+because nothing about the output signals that it is wrong. Making the separation structural
+rather than a convention means it cannot be forgotten. The same reasoning drives the related
+rule in `services/responsive.ts`: a difference between layouts is reported as a measurement
+(`info`), and only an execution that failed on one device while succeeding on another is called
+a `failure`.
+
+---
+
+## ADR-0011 — One browser engine for every device profile
+
+**Status:** Accepted · **Date:** 2026-11-02
+
+**Context.** Playwright ships WebKit and Firefox alongside Chromium, and its iOS device
+descriptors declare `defaultBrowserType: 'webkit'`.
+
+**Decision.** Lenz launches **Chromium for every device profile**. The engine a descriptor was
+authored for is persisted on the profile as `descriptorBrowser`, and each profile carries an
+`emulationNote` that the UI and the PDF print verbatim.
+
+**Reasoning.** The responsive comparison only means anything if the runs differ in *viewport*
+and nothing else. Changing the engine between runs would make screenshots, video encoding,
+layout rounding and coordinate space all vary simultaneously, so no difference could be
+attributed to the breakpoint. The cost — an iOS profile is Chromium wearing iOS metrics, not
+Safari — is real, so it is recorded in the data rather than in prose that a report could omit.
+Swapping engines later is a change to `browser/devices.ts` alone.

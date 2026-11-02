@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { DeviceProfile } from '@lenz/shared';
 import type {
   ClassificationSignal,
   CoverageMetric,
@@ -8,11 +9,13 @@ import type {
   ExecutionAction,
   Finding,
   GraphEdge,
+  InteractionEvent,
   Job,
   Persona,
   Project,
   Screen,
   Screenshot,
+  ScrollSample,
   TestPlan,
   TestStep,
   VideoRecord,
@@ -164,7 +167,92 @@ const mapExecution = (r: Row): Execution => ({
   navigationCount: r.navigation_count,
   failureReason: r.failure_reason,
   mode: r.mode,
+  // Stored as JSON. A row written before device selection existed has none, and
+  // reads back as null so the UI can say "device not recorded" rather than
+  // assume a viewport that would quietly corrupt every derived heatmap.
+  device: parseDeviceProfile(r.device),
   createdAt: r.created_at,
+});
+
+/** Parse a persisted profile, discarding anything that no longer validates. */
+function parseDeviceProfile(text: string | null | undefined): DeviceProfile | null {
+  if (!text) return null;
+  const raw = fromJson<unknown>(text, null);
+  if (!raw) return null;
+  const parsed = DeviceProfile.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+const mapInteractionEvent = (r: Row): InteractionEvent => ({
+  id: r.id,
+  executionId: r.execution_id,
+  projectId: r.project_id,
+  personaId: r.persona_id,
+  planId: r.plan_id,
+  stepId: r.step_id,
+  actionId: r.action_id,
+  index: r.event_index,
+  type: r.type,
+  source: r.source,
+  pointer: r.pointer,
+  label: r.label,
+  targetRole: r.target_role,
+  targetName: r.target_name,
+  targetSelector: r.target_selector,
+  targetWidth: r.target_width,
+  targetHeight: r.target_height,
+  viewportX: r.viewport_x,
+  viewportY: r.viewport_y,
+  pageX: r.page_x,
+  pageY: r.page_y,
+  coordinateStatus: r.coordinate_status,
+  coordinateNote: r.coordinate_note,
+  viewportWidth: r.viewport_width,
+  viewportHeight: r.viewport_height,
+  deviceScaleFactor: r.device_scale_factor,
+  deviceId: r.device_id,
+  deviceKind: r.device_kind,
+  url: r.url,
+  screenId: r.screen_id,
+  screenName: r.screen_name,
+  uiStateId: r.ui_state_id,
+  timestamp: r.timestamp,
+  elapsedMs: r.elapsed_ms,
+  videoOffsetMs: r.video_offset_ms,
+  result: r.result,
+  resultNote: r.result_note,
+  scrollX: r.scroll_x,
+  scrollY: r.scroll_y,
+  documentWidth: r.document_width,
+  documentHeight: r.document_height,
+  deltaX: r.delta_x,
+  deltaY: r.delta_y,
+  durationMs: r.duration_ms,
+});
+
+const mapScrollSample = (r: Row): ScrollSample => ({
+  id: r.id,
+  executionId: r.execution_id,
+  projectId: r.project_id,
+  personaId: r.persona_id,
+  screenId: r.screen_id,
+  screenName: r.screen_name,
+  deviceId: r.device_id,
+  deviceKind: r.device_kind,
+  container: r.container,
+  scrollX: r.scroll_x,
+  scrollY: r.scroll_y,
+  viewportWidth: r.viewport_width,
+  viewportHeight: r.viewport_height,
+  documentHeight: r.document_height,
+  documentWidth: r.document_width,
+  depthFraction: r.depth_fraction,
+  direction: r.direction,
+  dwellMs: r.dwell_ms,
+  elapsedMs: r.elapsed_ms,
+  videoOffsetMs: r.video_offset_ms,
+  timestamp: r.timestamp,
+  source: r.source,
 });
 
 const mapAction = (r: Row): ExecutionAction => ({
@@ -205,6 +293,8 @@ const mapScreenshot = (r: Row): Screenshot => ({
   verification: fromJson(r.verification, null),
   failureReason: r.failure_reason,
   source: r.source,
+  deviceId: r.device_id ?? null,
+  deviceScaleFactor: r.device_scale_factor ?? null,
 });
 
 const mapVideo = (r: Row): VideoRecord => ({
@@ -217,6 +307,8 @@ const mapVideo = (r: Row): VideoRecord => ({
   height: r.height,
   status: r.status,
   failureReason: r.failure_reason,
+  startOffsetMs: r.start_offset_ms ?? null,
+  deviceId: r.device_id ?? null,
   createdAt: r.created_at,
 });
 
@@ -660,14 +752,20 @@ export class Repositories {
 
   /* ---------------- executions ---------------- */
 
-  createExecution(projectId: string, planId: string, personaId: string, mode: 'live' | 'mock'): Execution {
+  createExecution(
+    projectId: string,
+    planId: string,
+    personaId: string,
+    mode: 'live' | 'mock',
+    device?: DeviceProfile | null,
+  ): Execution {
     const id = newId('exe');
     this.db
       .prepare(
-        `INSERT INTO executions (id,project_id,plan_id,persona_id,status,mode,created_at)
-         VALUES (?,?,?,?,'queued',?,?)`,
+        `INSERT INTO executions (id,project_id,plan_id,persona_id,status,mode,device,created_at)
+         VALUES (?,?,?,?,'queued',?,?,?)`,
       )
-      .run(id, projectId, planId, personaId, mode, nowIso());
+      .run(id, projectId, planId, personaId, mode, device ? toJson(device) : null, nowIso());
     return this.getExecution(id)!;
   }
 
@@ -742,17 +840,31 @@ export class Repositories {
 
   /* ---------------- evidence ---------------- */
 
-  addScreenshot(s: Omit<Screenshot, 'id'>): Screenshot {
+  /**
+   * Device context is optional at the call site: discovery captures predate the
+   * notion of a device profile and still write perfectly valid evidence. A
+   * screenshot without it reads back as "not recorded", which is what it is.
+   */
+  addScreenshot(
+    s: Omit<Screenshot, 'id' | 'deviceId' | 'deviceScaleFactor'> &
+      Partial<Pick<Screenshot, 'deviceId' | 'deviceScaleFactor'>>,
+  ): Screenshot {
     const id = newId('shot');
     this.db
       .prepare(
         `INSERT INTO screenshots (id,project_id,execution_id,screen_id,ui_state_id,node_id,screen_name,action_label,
-          path,width,height,bytes,captured_at,status,verification,failure_reason,source)
+          path,width,height,bytes,captured_at,status,verification,failure_reason,source,device_id,device_scale_factor)
          VALUES (@id,@projectId,@executionId,@screenId,@uiStateId,@nodeId,@screenName,@actionLabel,
-          @path,@width,@height,@bytes,@capturedAt,@status,@verification,@failureReason,@source)`,
+          @path,@width,@height,@bytes,@capturedAt,@status,@verification,@failureReason,@source,@deviceId,@deviceScaleFactor)`,
       )
-      .run({ id, ...s, verification: toJson(s.verification) });
-    return { id, ...s };
+      .run({
+        id,
+        ...s,
+        verification: toJson(s.verification),
+        deviceId: s.deviceId ?? null,
+        deviceScaleFactor: s.deviceScaleFactor ?? null,
+      });
+    return { id, deviceId: null, deviceScaleFactor: null, ...s };
   }
 
   listScreenshots(filter: { projectId?: string; executionId?: string; source?: string }): Screenshot[] {
@@ -770,20 +882,137 @@ export class Repositories {
     return r ? mapScreenshot(r) : null;
   }
 
-  addVideo(v: Omit<VideoRecord, 'id'>): VideoRecord {
+  addVideo(
+    v: Omit<VideoRecord, 'id' | 'startOffsetMs' | 'deviceId'> &
+      Partial<Pick<VideoRecord, 'startOffsetMs' | 'deviceId'>>,
+  ): VideoRecord {
     const id = newId('vid');
     this.db
       .prepare(
-        `INSERT INTO videos (id,execution_id,path,bytes,duration_ms,width,height,status,failure_reason,created_at)
-         VALUES (@id,@executionId,@path,@bytes,@durationMs,@width,@height,@status,@failureReason,@createdAt)`,
+        `INSERT INTO videos (id,execution_id,path,bytes,duration_ms,width,height,status,failure_reason,
+          start_offset_ms,device_id,created_at)
+         VALUES (@id,@executionId,@path,@bytes,@durationMs,@width,@height,@status,@failureReason,
+          @startOffsetMs,@deviceId,@createdAt)`,
       )
-      .run({ id, ...v });
-    return { id, ...v };
+      .run({ id, ...v, startOffsetMs: v.startOffsetMs ?? null, deviceId: v.deviceId ?? null });
+    return { id, startOffsetMs: null, deviceId: null, ...v };
   }
 
   getVideoForExecution(executionId: string): VideoRecord | null {
     const r = this.db.prepare('SELECT * FROM videos WHERE execution_id = ?').get(executionId) as Row | undefined;
     return r ? mapVideo(r) : null;
+  }
+
+  /* ---------------- interaction tracking ---------------- */
+
+  /**
+   * Bulk-insert interaction events.
+   *
+   * One transaction for the whole run: a three-minute mobile session can
+   * produce several hundred events, and committing each one separately turned a
+   * flush into seconds of fsync on WAL.
+   */
+  addInteractionEvents(events: InteractionEvent[]): number {
+    if (events.length === 0) return 0;
+    const stmt = this.db.prepare(
+      `INSERT OR REPLACE INTO interaction_events (
+        id,execution_id,project_id,persona_id,plan_id,step_id,action_id,event_index,type,source,pointer,label,
+        target_role,target_name,target_selector,target_width,target_height,
+        viewport_x,viewport_y,page_x,page_y,coordinate_status,coordinate_note,
+        viewport_width,viewport_height,device_scale_factor,device_id,device_kind,
+        url,screen_id,screen_name,ui_state_id,timestamp,elapsed_ms,video_offset_ms,
+        result,result_note,scroll_x,scroll_y,document_width,document_height,delta_x,delta_y,duration_ms
+      ) VALUES (
+        @id,@executionId,@projectId,@personaId,@planId,@stepId,@actionId,@index,@type,@source,@pointer,@label,
+        @targetRole,@targetName,@targetSelector,@targetWidth,@targetHeight,
+        @viewportX,@viewportY,@pageX,@pageY,@coordinateStatus,@coordinateNote,
+        @viewportWidth,@viewportHeight,@deviceScaleFactor,@deviceId,@deviceKind,
+        @url,@screenId,@screenName,@uiStateId,@timestamp,@elapsedMs,@videoOffsetMs,
+        @result,@resultNote,@scrollX,@scrollY,@documentWidth,@documentHeight,@deltaX,@deltaY,@durationMs
+      )`,
+    );
+    const tx = this.db.transaction((rows: InteractionEvent[]) => {
+      for (const e of rows) stmt.run(e);
+    });
+    tx(events);
+    return events.length;
+  }
+
+  listInteractionEvents(filter: {
+    executionId?: string;
+    projectId?: string;
+    executionIds?: string[];
+    screenId?: string;
+    deviceId?: string;
+    personaId?: string;
+    planId?: string;
+    types?: string[];
+  }): InteractionEvent[] {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (filter.executionId) { where.push('execution_id = ?'); params.push(filter.executionId); }
+    if (filter.projectId) { where.push('project_id = ?'); params.push(filter.projectId); }
+    if (filter.screenId) { where.push('screen_id = ?'); params.push(filter.screenId); }
+    if (filter.deviceId) { where.push('device_id = ?'); params.push(filter.deviceId); }
+    if (filter.personaId) { where.push('persona_id = ?'); params.push(filter.personaId); }
+    if (filter.planId) { where.push('plan_id = ?'); params.push(filter.planId); }
+    if (filter.executionIds && filter.executionIds.length > 0) {
+      where.push(`execution_id IN (${filter.executionIds.map(() => '?').join(',')})`);
+      params.push(...filter.executionIds);
+    }
+    if (filter.types && filter.types.length > 0) {
+      where.push(`type IN (${filter.types.map(() => '?').join(',')})`);
+      params.push(...filter.types);
+    }
+    const sql = `SELECT * FROM interaction_events${
+      where.length ? ' WHERE ' + where.join(' AND ') : ''
+    } ORDER BY execution_id, event_index`;
+    return (this.db.prepare(sql).all(...params) as Row[]).map(mapInteractionEvent);
+  }
+
+  addScrollSamples(samples: ScrollSample[]): number {
+    if (samples.length === 0) return 0;
+    const stmt = this.db.prepare(
+      `INSERT OR REPLACE INTO scroll_samples (
+        id,execution_id,project_id,persona_id,screen_id,screen_name,device_id,device_kind,container,
+        scroll_x,scroll_y,viewport_width,viewport_height,document_height,document_width,
+        depth_fraction,direction,dwell_ms,elapsed_ms,video_offset_ms,timestamp,source
+      ) VALUES (
+        @id,@executionId,@projectId,@personaId,@screenId,@screenName,@deviceId,@deviceKind,@container,
+        @scrollX,@scrollY,@viewportWidth,@viewportHeight,@documentHeight,@documentWidth,
+        @depthFraction,@direction,@dwellMs,@elapsedMs,@videoOffsetMs,@timestamp,@source
+      )`,
+    );
+    const tx = this.db.transaction((rows: ScrollSample[]) => {
+      for (const s of rows) stmt.run(s);
+    });
+    tx(samples);
+    return samples.length;
+  }
+
+  listScrollSamples(filter: {
+    executionId?: string;
+    projectId?: string;
+    executionIds?: string[];
+    screenId?: string;
+    deviceId?: string;
+    personaId?: string;
+  }): ScrollSample[] {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (filter.executionId) { where.push('execution_id = ?'); params.push(filter.executionId); }
+    if (filter.projectId) { where.push('project_id = ?'); params.push(filter.projectId); }
+    if (filter.screenId) { where.push('screen_id = ?'); params.push(filter.screenId); }
+    if (filter.deviceId) { where.push('device_id = ?'); params.push(filter.deviceId); }
+    if (filter.personaId) { where.push('persona_id = ?'); params.push(filter.personaId); }
+    if (filter.executionIds && filter.executionIds.length > 0) {
+      where.push(`execution_id IN (${filter.executionIds.map(() => '?').join(',')})`);
+      params.push(...filter.executionIds);
+    }
+    const sql = `SELECT * FROM scroll_samples${
+      where.length ? ' WHERE ' + where.join(' AND ') : ''
+    } ORDER BY execution_id, elapsed_ms`;
+    return (this.db.prepare(sql).all(...params) as Row[]).map(mapScrollSample);
   }
 
   /* ---------------- findings ---------------- */

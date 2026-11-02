@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { useJob } from '../lib/useJob';
+import { useActiveJob } from '../lib/useActiveJob';
 import {
   Badge,
   Card,
@@ -14,6 +14,8 @@ import {
   Skeleton,
   STATUS_TONE,
 } from '../components/ui';
+import { DeviceChip } from '../components/DeviceSelector';
+import { HeatmapPanel } from '../components/HeatmapPanel';
 
 export default function TestPlans() {
   const { id = '' } = useParams();
@@ -25,7 +27,7 @@ export default function TestPlans() {
   const plans = useQuery({ queryKey: ['plans', id], queryFn: () => api.get<any[]>(`/projects/${id}/test-plans`) });
   const executions = useQuery({ queryKey: ['executions', id], queryFn: () => api.get<any[]>(`/projects/${id}/executions`) });
 
-  const job = useJob([['plans', id]]);
+  const job = useActiveJob(id, ['testPlanGeneration'], [['plans', id]]);
 
   const generate = useMutation({
     mutationFn: () =>
@@ -42,6 +44,9 @@ export default function TestPlans() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['plans', id] }),
   });
 
+  // No device is sent, so the server applies its default desktop profile. The
+  // run still records that profile, so the heatmaps and the comparison view
+  // have the geometry they need without the user choosing anything here.
   const execute = useMutation({
     mutationFn: (planId: string) => api.post<{ executionId: string }>(`/test-plans/${planId}/execute`),
     onSuccess: () => {
@@ -125,9 +130,10 @@ export default function TestPlans() {
               <Link key={e.id} to={`/executions/${e.id}`} className="block">
                 <div className="flex items-center justify-between gap-4 rounded-lg bg-surface-850 px-3.5 py-3 hover:bg-surface-800 transition-colors">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium text-ink-100 truncate">{e.planName}</span>
                       <Badge tone={STATUS_TONE[e.status] ?? 'neutral'}>{e.status}</Badge>
+                      <DeviceChip device={e.device ?? null} />
                     </div>
                     <p className="text-2xs text-ink-500 mt-0.5">
                       {e.personaName} · {e.actionCount} actions · {e.navigationCount} navigations
@@ -231,11 +237,48 @@ export default function TestPlans() {
                 </div>
               )}
             </div>
+
+            <PlanHeatmap projectId={id} plan={plan} />
           </Card>
         ))}
       </div>
 
       {execute.error && <ErrorState error={execute.error} />}
+    </div>
+  );
+}
+
+/**
+ * This plan's own heatmap, collapsed by default.
+ *
+ * Scoped to the plan so it answers "where did people press while doing THIS
+ * task", which the project-wide map cannot. Collapsed because a page listing
+ * several plans should not render several canvases before anyone asks; the
+ * panel only fetches once it is opened.
+ */
+function PlanHeatmap({ projectId, plan }: { projectId: string; plan: any }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-4 pt-4 border-t border-surface-800">
+      <div className="flex items-center justify-between gap-3">
+        <button
+          className="text-2xs text-accent-400 hover:text-accent-300"
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? 'Hide heatmap' : 'Heatmap for this plan'}
+        </button>
+        <Link
+          to={`/projects/${projectId}/heatmap?planId=${plan.id}`}
+          className="text-2xs text-ink-500 hover:text-ink-300"
+        >
+          open in Heat Map →
+        </Link>
+      </div>
+      {open && (
+        <div className="mt-3">
+          <HeatmapPanel projectId={projectId} planId={plan.id} compact />
+        </div>
+      )}
     </div>
   );
 }

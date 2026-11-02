@@ -188,6 +188,9 @@ CREATE TABLE IF NOT EXISTS executions (
   navigation_count INTEGER NOT NULL DEFAULT 0,
   failure_reason   TEXT,
   mode             TEXT NOT NULL DEFAULT 'live',
+  -- Emulation profile this run used, as JSON. Null on runs recorded before
+  -- device selection existed; read back as 'not recorded', never assumed.
+  device           TEXT,
   created_at       TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_executions_project ON executions(project_id);
@@ -232,7 +235,11 @@ CREATE TABLE IF NOT EXISTS screenshots (
   verification   TEXT,
   failure_reason TEXT,
   -- ADR-0003: 'figma-render' is a design reference, never browser evidence.
-  source         TEXT NOT NULL DEFAULT 'browser'
+  source         TEXT NOT NULL DEFAULT 'browser',
+  -- Geometry context. width/height above are the CSS VIEWPORT size; the PNG is
+  -- width * device_scale_factor pixels across.
+  device_id      TEXT,
+  device_scale_factor REAL
 );
 CREATE INDEX IF NOT EXISTS idx_shots_project ON screenshots(project_id);
 CREATE INDEX IF NOT EXISTS idx_shots_execution ON screenshots(execution_id);
@@ -247,6 +254,10 @@ CREATE TABLE IF NOT EXISTS videos (
   height         INTEGER,
   status         TEXT NOT NULL DEFAULT 'complete',
   failure_reason TEXT,
+  -- Milliseconds between the execution clock origin and the first video frame.
+  -- Recording starts when the page is created, which is after the run opens.
+  start_offset_ms INTEGER,
+  device_id      TEXT,
   created_at     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_videos_execution ON videos(execution_id);
@@ -334,3 +345,94 @@ CREATE TABLE IF NOT EXISTS coverage_snapshots (
   computed_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_coverage_project ON coverage_snapshots(project_id);
+
+-- ------------------------------------------------------------------
+-- Interaction tracking
+--
+-- One row per observed interaction. Coordinates are CSS pixels in the
+-- emulated viewport's coordinate space; `coordinate_status` records
+-- whether a position was actually measured, and `coordinate_note`
+-- explains every absence. Nothing here is ever back-filled with a guess:
+-- an event with no position is excluded from heatmaps and the exclusion
+-- is reported.
+-- ------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS interaction_events (
+  id                  TEXT PRIMARY KEY,
+  execution_id        TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+  project_id          TEXT NOT NULL,
+  persona_id          TEXT,
+  plan_id             TEXT,
+  step_id             TEXT,
+  action_id           TEXT,
+  event_index         INTEGER NOT NULL,
+  type                TEXT NOT NULL,
+  source              TEXT NOT NULL,
+  pointer             TEXT NOT NULL,
+  label               TEXT,
+  target_role         TEXT,
+  target_name         TEXT,
+  target_selector     TEXT,
+  target_width        REAL,
+  target_height       REAL,
+  viewport_x          REAL,
+  viewport_y          REAL,
+  page_x              REAL,
+  page_y              REAL,
+  coordinate_status   TEXT NOT NULL DEFAULT 'unavailable',
+  coordinate_note     TEXT,
+  viewport_width      INTEGER NOT NULL,
+  viewport_height     INTEGER NOT NULL,
+  device_scale_factor REAL NOT NULL DEFAULT 1,
+  device_id           TEXT NOT NULL,
+  device_kind         TEXT NOT NULL,
+  url                 TEXT NOT NULL DEFAULT '',
+  screen_id           TEXT,
+  screen_name         TEXT,
+  ui_state_id         TEXT,
+  timestamp           TEXT NOT NULL,
+  elapsed_ms          INTEGER NOT NULL DEFAULT 0,
+  video_offset_ms     INTEGER,
+  result              TEXT NOT NULL DEFAULT 'unverified',
+  result_note         TEXT,
+  scroll_x            REAL,
+  scroll_y            REAL,
+  document_width      REAL,
+  document_height     REAL,
+  delta_x             REAL,
+  delta_y             REAL,
+  duration_ms         REAL
+);
+CREATE INDEX IF NOT EXISTS idx_ixn_execution ON interaction_events(execution_id);
+-- Heatmaps always group by screen within a project.
+CREATE INDEX IF NOT EXISTS idx_ixn_project_screen ON interaction_events(project_id, screen_id);
+CREATE INDEX IF NOT EXISTS idx_ixn_project_device ON interaction_events(project_id, device_id);
+
+CREATE TABLE IF NOT EXISTS scroll_samples (
+  id              TEXT PRIMARY KEY,
+  execution_id    TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+  project_id      TEXT NOT NULL,
+  persona_id      TEXT,
+  screen_id       TEXT,
+  screen_name     TEXT,
+  device_id       TEXT NOT NULL,
+  device_kind     TEXT NOT NULL,
+  container       TEXT NOT NULL DEFAULT 'window',
+  scroll_x        REAL NOT NULL DEFAULT 0,
+  scroll_y        REAL NOT NULL DEFAULT 0,
+  viewport_width  INTEGER NOT NULL,
+  viewport_height INTEGER NOT NULL,
+  -- Null when the document height could not be measured. Never defaulted:
+  -- a fabricated height would turn an unknown depth into a confident one.
+  document_height REAL,
+  document_width  REAL,
+  depth_fraction  REAL,
+  direction       TEXT NOT NULL DEFAULT 'none',
+  dwell_ms        INTEGER NOT NULL DEFAULT 0,
+  elapsed_ms      INTEGER NOT NULL DEFAULT 0,
+  video_offset_ms INTEGER,
+  timestamp       TEXT NOT NULL,
+  source          TEXT NOT NULL DEFAULT 'browser-listener'
+);
+CREATE INDEX IF NOT EXISTS idx_scroll_execution ON scroll_samples(execution_id);
+CREATE INDEX IF NOT EXISTS idx_scroll_project_screen ON scroll_samples(project_id, screen_id);

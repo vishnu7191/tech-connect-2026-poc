@@ -15,6 +15,7 @@ the original conversation**.
 | 3 | [architecture/overview.md](architecture/overview.md) | System shape, module boundaries, request and job lifecycle. |
 | 4 | [architecture/figma-discovery.md](architecture/figma-discovery.md) | URL classification, REST discovery, the typed graph model, entry-point ranking. |
 | 5 | [architecture/browser-automation.md](architecture/browser-automation.md) | Playwright engine, screenshot verification, Make discovery, video recording. |
+| 5b | [architecture/interaction-tracking.md](architecture/interaction-tracking.md) | Device emulation, interaction events, video markers, heatmaps, scroll analytics, responsive comparison, PDF reports. |
 | 6 | [architecture/ai-providers.md](architecture/ai-providers.md) | Centralized JSON provider config, adapters, task-to-model routing, Model Lab. |
 | 7 | [architecture/data-model.md](architecture/data-model.md) | Persistence schema and entity relationships. |
 | 8 | [architecture/api-design.md](architecture/api-design.md) | HTTP surface and real-time progress. |

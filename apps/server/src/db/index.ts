@@ -39,7 +39,54 @@ function migrate(conn: Db): void {
     throw new Error(`Could not locate schema.sql (looked in: ${candidates.join(', ')})`);
   }
   conn.exec(fs.readFileSync(schemaPath, 'utf8'));
+  addMissingColumns(conn);
   logger.debug({ schemaPath }, 'Database schema applied');
+}
+
+/**
+ * Columns added to tables that already exist in a user's database.
+ *
+ * `CREATE TABLE IF NOT EXISTS` in schema.sql creates new tables but silently
+ * does nothing to an existing one, so a new column on an old table needs an
+ * explicit ALTER. Keeping that here rather than in schema.sql means an existing
+ * project's data, executions and recordings survive the upgrade untouched:
+ * every column below is nullable or defaulted, so old rows remain valid and
+ * read back as "not recorded" instead of as a wrong value.
+ *
+ * Forward-only and idempotent - the current columns are read first, and only
+ * what is genuinely absent is added.
+ */
+const COLUMN_MIGRATIONS: Array<{ table: string; column: string; ddl: string }> = [
+  // The emulation profile a run used, as JSON. Null on pre-device executions.
+  { table: 'executions', column: 'device', ddl: 'TEXT' },
+  // Offset between the execution clock origin and the first video frame.
+  { table: 'videos', column: 'start_offset_ms', ddl: 'INTEGER' },
+  { table: 'videos', column: 'device_id', ddl: 'TEXT' },
+  // Geometry context, so an overlay can tell whether an image and a set of
+  // coordinates describe the same viewport.
+  { table: 'screenshots', column: 'device_id', ddl: 'TEXT' },
+  { table: 'screenshots', column: 'device_scale_factor', ddl: 'REAL' },
+];
+
+function addMissingColumns(conn: Db): void {
+  for (const m of COLUMN_MIGRATIONS) {
+    try {
+      const existing = conn.prepare(`PRAGMA table_info(${m.table})`).all() as Array<{ name: string }>;
+      if (existing.length === 0) continue; // table not present in this database
+      if (existing.some((c) => c.name === m.column)) continue;
+      conn.exec(`ALTER TABLE ${m.table} ADD COLUMN ${m.column} ${m.ddl}`);
+      logger.info({ table: m.table, column: m.column }, 'Added missing column');
+    } catch (err) {
+      // Never swallow: a failed migration changes what the rest of the code can
+      // assume, and a silent failure here would surface much later as a
+      // confusing "no such column" at query time.
+      logger.error(
+        { table: m.table, column: m.column, err: (err as Error).message },
+        'Column migration failed',
+      );
+      throw err;
+    }
+  }
 }
 
 export function closeDb(): void {

@@ -213,6 +213,58 @@ export interface InteractionResult {
   verdict: NavigationVerdict;
   actualNodeId: string | null;
   error: string | null;
+  /**
+   * Wall-clock time at which the press was dispatched.
+   *
+   * This call does not return until it has polled for the resulting
+   * navigation, which takes anywhere from one poll interval to four seconds.
+   * Timestamping the interaction when the call RETURNS therefore places it
+   * after the navigation it caused - measured at ~1.2s late, which put every
+   * video marker on the following screen. The caller records this instead.
+   */
+  dispatchedAt: number;
+}
+
+/* ------------------------------------------------------------------ *
+ * Viewport measurement
+ * ------------------------------------------------------------------ */
+
+export interface ViewportState {
+  scrollX: number;
+  scrollY: number;
+  documentWidth: number | null;
+  documentHeight: number | null;
+  viewportWidth: number;
+  viewportHeight: number;
+}
+
+/**
+ * Read the page's scroll position and document size.
+ *
+ * Every field can legitimately be unavailable - a cross-origin frame, a
+ * navigating document - and the caller must be able to tell "zero" from
+ * "unknown", so document size is nullable and is never defaulted.
+ */
+export async function readViewportState(page: Page): Promise<ViewportState | null> {
+  try {
+    return await page.evaluate(() => {
+      const d = document.documentElement;
+      const b = document.body;
+      const h = Math.max(d ? d.scrollHeight : 0, b ? b.scrollHeight : 0, window.innerHeight || 0);
+      const w = Math.max(d ? d.scrollWidth : 0, b ? b.scrollWidth : 0, window.innerWidth || 0);
+      return {
+        scrollX: window.scrollX || 0,
+        scrollY: window.scrollY || 0,
+        documentWidth: w > 0 ? w : null,
+        documentHeight: h > 0 ? h : null,
+        viewportWidth: window.innerWidth || 0,
+        viewportHeight: window.innerHeight || 0,
+      };
+    });
+  } catch (err) {
+    logger.debug({ err: (err as Error).message }, 'Could not read the viewport state');
+    return null;
+  }
 }
 
 /**
@@ -226,15 +278,27 @@ export async function clickAndVerify(
   session: BrowserSession,
   point: { x: number; y: number },
   expectedNodeId: string | null,
-  opts: { waitMs?: number } = {},
+  opts: { waitMs?: number; pointer?: 'mouse' | 'touch' } = {},
 ): Promise<InteractionResult> {
   const page = session.getPage();
   const before = extractNodeIdFromViewerUrl(page.url());
 
+  // On a touch profile the activation must be a real touch: a mouse click does
+  // not fire touchstart/touchend, so a UI that only listens for touch would
+  // appear unresponsive and be reported as a defect that does not exist.
+  const useTouch = (opts.pointer ?? (session.profile.hasTouch ? 'touch' : 'mouse')) === 'touch';
+
+  // Stamped immediately around the dispatch, so the recorded moment is the
+  // press itself rather than whenever the navigation poll below gives up.
+  const dispatchedAt = Date.now();
   try {
-    await page.mouse.click(point.x, point.y);
+    if (useTouch) {
+      await page.touchscreen.tap(point.x, point.y);
+    } else {
+      await page.mouse.click(point.x, point.y);
+    }
   } catch (err) {
-    return { verdict: 'timeout', actualNodeId: before, error: (err as Error).message };
+    return { verdict: 'timeout', actualNodeId: before, error: (err as Error).message, dispatchedAt };
   }
 
   const waitMs = opts.waitMs ?? 4000;
@@ -250,15 +314,119 @@ export async function clickAndVerify(
   }
 
   if (actual === before) {
-    return { verdict: 'no-navigation', actualNodeId: actual, error: null };
+    return { verdict: 'no-navigation', actualNodeId: actual, error: null, dispatchedAt };
   }
   if (!expectedNodeId) {
-    return { verdict: 'not-applicable', actualNodeId: actual, error: null };
+    return { verdict: 'not-applicable', actualNodeId: actual, error: null, dispatchedAt };
   }
   return {
     verdict: actual === expectedNodeId ? 'match' : 'mismatch',
     actualNodeId: actual,
     error: null,
+    dispatchedAt,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Scrolling
+ * ------------------------------------------------------------------ */
+
+export interface ScrollOutcome {
+  /** How the scroll was actually performed - recorded, never assumed. */
+  method: 'touch-drag' | 'wheel';
+  /** Wall-clock time the gesture began, for the same reason as `dispatchedAt`. */
+  startedAt: number;
+  /** Scroll position before and after, when measurable. */
+  before: ViewportState | null;
+  after: ViewportState | null;
+  /** Pixels the page actually moved. Null when the position was unreadable. */
+  movedPx: number | null;
+  error: string | null;
+}
+
+/**
+ * Scroll the viewport vertically.
+ *
+ * On a touch profile this performs a genuine finger drag through CDP's touch
+ * input, because a wheel event is not how a phone scrolls: a page that drives
+ * its own momentum, a carousel that listens for touchmove, or a pull-to-refresh
+ * affordance all behave differently under the two. When CDP is unavailable the
+ * call degrades to a wheel and SAYS which was used, so a reader of the run can
+ * see that the gesture was synthetic.
+ *
+ * The drag is issued in steps rather than one jump, since a single large
+ * touchmove is treated by most scroll containers as a flick with no travel.
+ */
+export async function scrollViewport(
+  session: BrowserSession,
+  deltaY: number,
+  opts: { steps?: number } = {},
+): Promise<ScrollOutcome> {
+  const page = session.getPage();
+  const startedAt = Date.now();
+  const before = await readViewportState(page);
+  const viewport = session.viewport;
+  const steps = Math.max(2, Math.min(opts.steps ?? 12, 40));
+
+  let method: ScrollOutcome['method'] = 'wheel';
+  let error: string | null = null;
+
+  if (session.profile.hasTouch) {
+    try {
+      const startX = Math.round(viewport.width / 2);
+      // Start the drag away from the very top/bottom edges: an edge-anchored
+      // drag can be consumed by pull-to-refresh or browser overscroll instead
+      // of scrolling the document.
+      const travel = Math.min(Math.abs(deltaY), Math.round(viewport.height * 0.6));
+      const direction = deltaY >= 0 ? -1 : 1; // scrolling down drags the finger up
+      const startY = Math.round(
+        deltaY >= 0 ? viewport.height * 0.75 : viewport.height * 0.25,
+      );
+
+      const cdp = await page.context().newCDPSession(page);
+      const touchPoint = (y: number) => [{ x: startX, y, id: 1 }];
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: touchPoint(startY),
+      });
+      for (let i = 1; i <= steps; i++) {
+        const y = Math.round(startY + direction * travel * (i / steps));
+        await cdp.send('Input.dispatchTouchEvent', {
+          type: 'touchMove',
+          touchPoints: touchPoint(Math.max(1, Math.min(viewport.height - 1, y))),
+        });
+        await page.waitForTimeout(16);
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await cdp.detach().catch(() => undefined);
+      method = 'touch-drag';
+    } catch (err) {
+      // Log rather than swallow, then fall back - a lost scroll would silently
+      // flatten every scroll-depth figure for the run.
+      error = `Touch drag failed (${(err as Error).message}); fell back to a wheel event.`;
+      logger.warn({ err: (err as Error).message }, 'Touch scroll failed; using wheel');
+      await page.mouse.wheel(0, deltaY).catch(() => undefined);
+      method = 'wheel';
+    }
+  } else {
+    try {
+      await page.mouse.wheel(0, deltaY);
+    } catch (err) {
+      error = (err as Error).message;
+    }
+  }
+
+  // Momentum and smooth-scroll behaviour both continue past the gesture.
+  await page.waitForTimeout(700);
+  const after = await readViewportState(page);
+
+  return {
+    method,
+    startedAt,
+    before,
+    after,
+    movedPx: before && after ? after.scrollY - before.scrollY : null,
+    error,
   };
 }
 

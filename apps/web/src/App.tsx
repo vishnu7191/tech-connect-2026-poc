@@ -8,6 +8,7 @@ import Personas from './pages/Personas';
 import TestPlans from './pages/TestPlans';
 import ExecutionPage from './pages/Execution';
 import Findings from './pages/Findings';
+import HeatMap from './pages/HeatMap';
 import ModelLab from './pages/ModelLab';
 
 function Logo() {
@@ -32,13 +33,18 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? 'bg-surface-800 text-ink-100 font-medium' : 'text-ink-400 hover:text-ink-200 hover:bg-surface-850'
   }`;
 
-/** Project-scoped navigation only appears once a project is selected. */
-function ProjectNav() {
-  const { id } = useParams<{ id: string }>();
-  if (!id) return null;
+/** The project links themselves, given a project id from wherever we are. */
+function ProjectLinks({ id }: { id: string }) {
+  const project = useQuery({
+    queryKey: ['project-name', id],
+    queryFn: () => api.get<{ name: string }>(`/projects/${id}`),
+    staleTime: 60_000,
+  });
   return (
     <div className="mt-5">
-      <p className="label px-3 mb-1.5">Project</p>
+      <p className="label px-3 mb-1.5 truncate" title={project.data?.name}>
+        {project.data?.name ?? 'Project'}
+      </p>
       <nav className="space-y-0.5">
         <NavLink to={`/projects/${id}`} end className={linkClass}>
           Discovery
@@ -49,12 +55,48 @@ function ProjectNav() {
         <NavLink to={`/projects/${id}/test-plans`} className={linkClass}>
           Test Plans
         </NavLink>
+        <NavLink to={`/projects/${id}/heatmap`} className={linkClass}>
+          Heat Map
+        </NavLink>
         <NavLink to={`/projects/${id}/findings`} className={linkClass}>
           UX Analysis
         </NavLink>
       </nav>
     </div>
   );
+}
+
+/**
+ * Project-scoped navigation, when the URL names the project directly.
+ *
+ * `/projects/new` also matches `/projects/:id/*`, so "new" has to be excluded
+ * explicitly - otherwise the sidebar renders links for a project that does not
+ * exist and asks the API for one called "new".
+ */
+function ProjectNav() {
+  const { id } = useParams<{ id: string }>();
+  if (!id || id === 'new') return null;
+  return <ProjectLinks id={id} />;
+}
+
+/**
+ * Project-scoped navigation while viewing a recording.
+ *
+ * `/executions/:id` does not name a project, so the sidebar used to empty out
+ * as soon as you opened a recap — leaving no way back into the project without
+ * the browser's back button. The execution knows its project, so the same links
+ * stay put.
+ */
+function ExecutionProjectNav() {
+  const { id } = useParams<{ id: string }>();
+  const execution = useQuery({
+    queryKey: ['execution-project', id],
+    queryFn: () => api.get<{ projectId: string }>(`/executions/${id}`),
+    enabled: Boolean(id),
+    staleTime: 60_000,
+  });
+  if (!execution.data?.projectId) return null;
+  return <ProjectLinks id={execution.data.projectId} />;
 }
 
 function HealthBadge() {
@@ -107,6 +149,7 @@ export default function App() {
           </nav>
           <Routes>
             <Route path="/projects/:id/*" element={<ProjectNav />} />
+            <Route path="/executions/:id" element={<ExecutionProjectNav />} />
           </Routes>
         </div>
         <HealthBadge />
@@ -120,6 +163,9 @@ export default function App() {
             <Route path="/projects/:id" element={<ProjectPage />} />
             <Route path="/projects/:id/personas" element={<Personas />} />
             <Route path="/projects/:id/test-plans" element={<TestPlans />} />
+            <Route path="/projects/:id/heatmap" element={<HeatMap />} />
+            {/* Old link kept working so existing bookmarks do not 404. */}
+            <Route path="/projects/:id/responsive" element={<HeatMap />} />
             <Route path="/projects/:id/findings" element={<Findings />} />
             <Route path="/executions/:id" element={<ExecutionPage />} />
             <Route path="/model-lab" element={<ModelLab />} />

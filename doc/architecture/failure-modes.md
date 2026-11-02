@@ -157,3 +157,44 @@ Honest about what is *not* handled:
 - `classify.test.ts` (11) — pinned against **real captured Rosella nodes**
 - `analyze.test.ts` (29) — typed-edge graph semantics
 - `capture.test.ts` (11) — blankness calibration from measured values
+
+---
+
+## Interaction tracking, device emulation and reports (added 2026-11-02)
+
+See [`interaction-tracking.md`](interaction-tracking.md) for the design these failures shaped.
+
+| Failure | How it manifests | How it is handled |
+|---|---|---|
+| **An action has no pointer position** (keyboard activation, node-id jump, scroll, unmappable control) | A heatmap built from it would show a phantom hotspot at 0,0 | `coordinateStatus: 'unavailable'` with a **required** reason; excluded from heatmaps and the exclusion reported with its count (ADR-0009) |
+| **Document height not measurable** (Figma canvas, cross-origin frame, mid-navigation) | Scroll depth would read as 0 % — "the persona never scrolled" | `depthFraction: null`, surfaced as "not measurable"; depth figures exclude the sample and say how many were excluded |
+| **Video recording starts after the run does** | Every marker and timeline seek early by the browser's start-up time | `videos.start_offset_ms` measured per run; recordings without it fall back and are badged *"timing approximate"* |
+| **Browser converts a drag into scrolling** | `touchcancel` carries a stale position, so a 400 px flick records as ~39 px | Maximum displacement tracked across `touchmove`; `touchcancel` bound alongside `touchend` |
+| **Lenz's own banner-dismissal clicks are observed by the page listeners** | *"Clicked Allow all cookies"* appears in the UX heatmap, attributed to the persona | `BrowserSession` suppresses page-observed interactions while `dismissBanners()` runs, plus 400 ms of slack for an in-flight binding callback |
+| **The page echoes an interaction the wrapper just performed** | Every click counted twice | De-duplicated within 700 ms and 8 CSS px of a wrapper action; provenance kept in `source` |
+| **Instrumentation cannot be installed** (binding or init script rejected) | A thinner dataset presented as complete | `hasPageInstrumentation` is false, wrapper-only recording continues, and the execution's notes state the reduced fidelity |
+| **Chromium refuses `isMobile`** | The whole run lost to a context option | Retried without mobile emulation; viewport and touch kept, and the downgrade recorded in the execution's notes |
+| **A screenshot's geometry does not match the recorded viewport** | The overlay misplaces every point over a plausible-looking image | `screenshotCompatible: false`; points are listed instead of drawn, with the two geometries named |
+| **A persisted device profile no longer validates** | Half-written geometry silently used as real geometry | `parseDeviceProfile` discards it and the run reads back as *"device not recorded"* |
+| **A runaway page floods the recorder** | Database growth unbounded by anything | Hard caps (5000 events, 4000 scroll samples); on reaching them the notes state that the set is a *prefix* of the run, not a sample |
+| **A screenshot referenced by a finding is missing from disk** | A silently evidence-free "evidence" section | `loadImages` logs it, counts it as omitted, and the report prints the omission count |
+| **Report images exceed the embedding budget** | A PDF too large to email | 24 MB base64 budget; anything dropped is counted and printed |
+| **React StrictMode double-mounts a progress subscriber** | A job streams to a listener that has already been cleaned up; the UI freezes at "Starting… 0 %" while the job completes behind it | The subscribe effect depends only on the job id and the stable `watch` callback, so the second mount re-subscribes; no ref guard |
+| **A report is generated while an analysis is still running** | A document that silently omits the findings being produced | Preview and download are disabled for the duration |
+
+### Video/timeline synchronization (measured 2026-11-02)
+
+| Failure | How it manifests | How it is handled |
+|---|---|---|
+| **An action's `offsetMs` is its completion time, not its click time** | Clicking a timeline step seeks past the navigation the click caused, showing the *next* screen — measured at 1.9s (desktop) and 5.5s (mobile) | `seekOffsetForAction()` seeks to the step's first recorded interaction; the action offset is only a fallback for steps that recorded nothing |
+| **Playwright's webm declares a duration ~4.6% longer than the wall time it covers** | Looks like clock drift, and invites rescaling marker times by `duration / wallSpan` | **Do not rescale.** Ground truth (`verify-video-sync.mts`) measured rescaling at 574ms mean error against 186ms for the direct mapping: the declared duration is inflated but frame timestamps are real-time |
+| **A `file://` video loaded from `about:blank` yields a 0×0 element** | Silent failure with `duration: NaN`; looks like a corrupt recording | Only affects probes. Load from a local page beside the file, and add `--allow-file-access-from-files` when the frames must be read back through a canvas |
+
+### Timestamping and evidence rendering (measured 2026-11-02)
+
+| Failure | How it manifests | How it is handled |
+|---|---|---|
+| **An interaction is timestamped after the navigation it caused** | `clickAndVerify` polls for navigation for up to 4s before returning; stamping on return put clicks ~1.2s late, so only 1 of 4 video markers sat on the screen its click happened on | `InteractionResult.dispatchedAt` is stamped around the dispatch and passed as `RecordPointerInput.occurredAtMs`; `scrollViewport` does the same with `startedAt`. Measured back to 4/4 |
+| **Seeking exactly onto a press** | The viewer lands at the instant the screen is already changing, so the moment they asked to see is half over | The timeline leads the interaction by `SEEK_PREROLL_S` (0.8s) and plays |
+| **`object-fit: cover` with a max-height on evidence** | Screenshots were cropped in half in the PDF, and the surviving half was presented as the evidence | Both axes constrained with `width/height: auto` so the image scales instead of cropping; the heatmap background uses `object-contain` for the same reason |
+| **A background job outlives the page that started it** | Navigating away mid-run and returning showed no progress at all, so live work looked as though it had died | `GET /projects/:id/jobs?status=queued,running` plus the `useActiveJob` hook, which re-attaches to the newest matching job on mount |

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { useJob } from '../lib/useJob';
+import { useActiveJob } from '../lib/useActiveJob';
 import { Badge, Card, Empty, ErrorState, Field, Progress, SectionTitle, Skeleton } from '../components/ui';
 
 const PROFICIENCY_TONE: Record<string, 'bad' | 'warn' | 'info' | 'ok'> = {
@@ -42,7 +42,7 @@ export default function Personas() {
     queryFn: () => api.get<any[]>(`/personas?projectId=${id}`),
   });
 
-  const job = useJob([['personas', id]]);
+  const job = useActiveJob(id, ['personaGeneration'], [['personas', id]]);
 
   const generate = useMutation({
     mutationFn: () => api.post<{ jobId: string }>(`/projects/${id}/personas/generate`, { count, guidance: guidance || null }),

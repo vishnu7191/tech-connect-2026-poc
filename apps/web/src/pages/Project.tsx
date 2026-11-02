@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, screenshotUrl } from '../lib/api';
-import { useJob } from '../lib/useJob';
+import { useActiveJob } from '../lib/useActiveJob';
 import {
   Badge,
   Card,
@@ -31,7 +31,7 @@ export default function ProjectPage() {
   const entries = useQuery({ queryKey: ['entries', id], queryFn: () => api.get<any[]>(`/projects/${id}/entry-points`) });
   const shots = useQuery({ queryKey: ['shots', id], queryFn: () => api.get<any[]>(`/projects/${id}/screenshots`) });
 
-  const job = useJob([['project', id], ['screens', id], ['graph', id], ['entries', id], ['shots', id]]);
+  const job = useActiveJob(id, ['discovery'], [['project', id], ['screens', id], ['graph', id], ['entries', id], ['shots', id]]);
 
   const discover = useMutation({
     mutationFn: () =>

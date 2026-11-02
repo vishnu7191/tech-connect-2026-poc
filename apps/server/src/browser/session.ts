@@ -1,10 +1,24 @@
 import { chromium, type Browser, type BrowserContext, type Page, type Frame } from 'playwright';
 import path from 'node:path';
+import type { DeviceProfile } from '@lenz/shared';
 import { env } from '../config/env.js';
 import { BrowserError } from '../core/errors.js';
 import { logger } from '../core/logger.js';
 import { isAllowedFigmaHost } from '../figma/url.js';
+import { contextOptionsFor, defaultDeviceProfile, listDeviceProfiles } from './devices.js';
+import {
+  applyInstrumentationNow,
+  installInteractionInstrumentation,
+  type RawPageEvent,
+} from './instrumentation.js';
 
+/**
+ * Legacy device names.
+ *
+ * Discovery and Make exploration ask for a plain `'desktop'` session and do not
+ * care about emulation detail, so the old shorthand still resolves. New code
+ * passes a full `DeviceProfile`.
+ */
 export type DeviceClassName = 'desktop' | 'mobile';
 
 export const VIEWPORTS: Record<DeviceClassName, { width: number; height: number }> = {
@@ -15,11 +29,20 @@ export const VIEWPORTS: Record<DeviceClassName, { width: number; height: number 
 };
 
 export interface SessionOptions {
+  /** Legacy shorthand. Ignored when `profile` is supplied. */
   device?: DeviceClassName;
+  /** Full emulation profile - viewport, DPR, touch, mobile flag, user agent. */
+  profile?: DeviceProfile;
   /** Directory for Playwright video output. Recording must be enabled at
    *  context creation - it cannot be turned on later. */
   videoDir?: string;
   headless?: boolean;
+  /**
+   * Receives every interaction the page itself observed. Supplying it installs
+   * the page-side listeners; omitting it leaves the page completely untouched,
+   * which is what discovery wants.
+   */
+  onPageInteraction?: (event: RawPageEvent) => void;
 }
 
 /**
@@ -34,27 +57,95 @@ export class BrowserSession {
   private context: BrowserContext | null = null;
   private page: Page | null = null;
   private bannersDismissed = false;
+  private readonly resolvedProfile: DeviceProfile;
+  private videoStartedAtMs: number | null = null;
+  private instrumented = false;
+  /** Set when emulation had to be degraded to get a context at all. */
+  private emulationDowngrade: string | null = null;
+  /**
+   * Wall-clock time until which page-observed interactions are discarded.
+   *
+   * Lenz dismisses Figma's cookie banner and hardware-acceleration toast before
+   * every capture. Those are real clicks and the page-side listeners duly
+   * report them - which put "Clicked Allow all cookies" into the UX heatmap of
+   * a live run, at the banner's position, attributed to the persona. That is
+   * Lenz's own housekeeping, not behaviour worth analysing, so interactions are
+   * suppressed while it happens.
+   *
+   * The trailing margin exists because a binding callback can be delivered a
+   * few milliseconds after the click that caused it.
+   */
+  private suppressInteractionsUntil = 0;
+  private suppressedCount = 0;
 
-  constructor(private readonly opts: SessionOptions = {}) {}
+  constructor(private readonly opts: SessionOptions = {}) {
+    this.resolvedProfile = opts.profile ?? legacyProfile(opts.device ?? 'desktop');
+  }
 
+  /** The emulation profile actually in force. */
+  get profile(): DeviceProfile {
+    return this.resolvedProfile;
+  }
+
+  /** Legacy accessor, derived from the profile so old call sites stay correct. */
   get device(): DeviceClassName {
-    return this.opts.device ?? 'desktop';
+    return this.resolvedProfile.kind === 'desktop' ? 'desktop' : 'mobile';
+  }
+
+  /** CSS-pixel viewport the context was created with. */
+  get viewport(): { width: number; height: number } {
+    return { width: this.resolvedProfile.width, height: this.resolvedProfile.height };
+  }
+
+  /**
+   * Wall-clock time of the first video frame, or null when not recording.
+   *
+   * Playwright begins recording when the PAGE is created, which is measurably
+   * later than the moment the execution record opened. Every marker in the
+   * recap player is offset by this difference, so it is captured here rather
+   * than assumed to be zero.
+   */
+  get videoStartedAt(): number | null {
+    return this.videoStartedAtMs;
+  }
+
+  get hasPageInstrumentation(): boolean {
+    return this.instrumented;
+  }
+
+  get emulationNote(): string | null {
+    return this.emulationDowngrade;
   }
 
   async start(): Promise<Page> {
-    const viewport = VIEWPORTS[this.device];
     try {
       this.browser = await chromium.launch({
         headless: this.opts.headless ?? env.HEADLESS,
         args: ['--disable-dev-shm-usage'],
       });
-      this.context = await this.browser.newContext({
-        viewport,
-        deviceScaleFactor: 1,
-        ...(this.opts.videoDir
-          ? { recordVideo: { dir: this.opts.videoDir, size: viewport } }
-          : {}),
-      });
+
+      const deviceOptions = contextOptionsFor(this.resolvedProfile);
+      const recordOptions = this.opts.videoDir
+        ? { recordVideo: { dir: this.opts.videoDir, size: deviceOptions.viewport } }
+        : {};
+
+      try {
+        this.context = await this.browser.newContext({ ...deviceOptions, ...recordOptions });
+      } catch (err) {
+        // Mobile emulation is the only part of the profile Chromium has ever
+        // been observed to refuse. Losing the whole run to it would be worse
+        // than running slightly degraded and saying so.
+        this.emulationDowngrade = `Mobile emulation could not be applied (${(err as Error).message}); the run used the viewport and touch settings only.`;
+        logger.warn(
+          { profile: this.resolvedProfile.id, err: (err as Error).message },
+          'Falling back to a context without isMobile emulation',
+        );
+        this.context = await this.browser.newContext({
+          ...deviceOptions,
+          isMobile: false,
+          ...recordOptions,
+        });
+      }
 
       /**
        * SSRF defence at the browser layer.
@@ -96,7 +187,21 @@ export class BrowserSession {
       });
 
       this.page = await this.context.newPage();
+      // Recording starts with the page, so this is the video's time origin.
+      if (this.opts.videoDir) this.videoStartedAtMs = Date.now();
       this.page.setDefaultTimeout(45_000);
+
+      if (this.opts.onPageInteraction) {
+        const forward = this.opts.onPageInteraction;
+        this.instrumented = await installInteractionInstrumentation(this.page, (event) => {
+          if (Date.now() < this.suppressInteractionsUntil) {
+            this.suppressedCount++;
+            return;
+          }
+          forward(event);
+        });
+      }
+
       return this.page;
     } catch (err) {
       await this.close();
@@ -107,6 +212,18 @@ export class BrowserSession {
   getPage(): Page {
     if (!this.page) throw new BrowserError('Browser session has not been started');
     return this.page;
+  }
+
+  /**
+   * Re-apply the page-side listeners to the document currently loaded.
+   *
+   * `addInitScript` only reaches documents created after it was registered, so
+   * a navigation that happened before instrumentation was installed would be
+   * unobserved. Idempotent - the script no-ops when already present.
+   */
+  async refreshInstrumentation(): Promise<void> {
+    if (!this.instrumented || !this.page) return;
+    await applyInstrumentationNow(this.page);
   }
 
   /**
@@ -121,6 +238,9 @@ export class BrowserSession {
    */
   async dismissBanners(): Promise<void> {
     const page = this.getPage();
+    // Anything the page reports while this runs is Lenz clearing Figma's own
+    // chrome, not the persona interacting with the product being tested.
+    this.suppressInteractionsUntil = Date.now() + 4000;
     const selectors = [
       'button:has-text("Allow all cookies")',
       'button:has-text("Do not allow cookies")',
@@ -141,7 +261,15 @@ export class BrowserSession {
       }
     }
     if (clicked) await page.waitForTimeout(300);
+    // 400ms of slack for a binding callback still in flight; without it the
+    // last banner click can still land in the recorded set.
+    this.suppressInteractionsUntil = Date.now() + 400;
     this.bannersDismissed = true;
+  }
+
+  /** How many page-observed interactions were discarded as housekeeping. */
+  get suppressedInteractions(): number {
+    return this.suppressedCount;
   }
 
   get hasDismissedBanners(): boolean {
@@ -206,6 +334,14 @@ export class BrowserSession {
     this.browser = null;
     this.page = null;
   }
+}
+
+/** Map the legacy `'desktop' | 'mobile'` shorthand onto a real profile. */
+function legacyProfile(name: DeviceClassName): DeviceProfile {
+  if (name === 'desktop') return defaultDeviceProfile();
+  return (
+    listDeviceProfiles().find((d) => d.id === 'mobile-390') ?? defaultDeviceProfile()
+  );
 }
 
 /**
